@@ -19,39 +19,46 @@
 
 package org.elasticsearch.plugins;
 
+import joptsimple.OptionSet;
+import org.elasticsearch.cli.EnvironmentAwareCommand;
+import org.elasticsearch.cli.Terminal;
+import org.elasticsearch.env.Environment;
+
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import joptsimple.OptionSet;
-import org.elasticsearch.cli.Command;
-import org.elasticsearch.cli.Terminal;
-import org.elasticsearch.env.Environment;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A command for the plugin cli to list plugins installed in elasticsearch.
  */
-class ListPluginsCommand extends Command {
+class ListPluginsCommand extends EnvironmentAwareCommand {
 
-    private final Environment env;
-
-    ListPluginsCommand(Environment env) {
+    ListPluginsCommand() {
         super("Lists installed elasticsearch plugins");
-        this.env = env;
     }
 
     @Override
-    protected void execute(Terminal terminal, OptionSet options) throws Exception {
+    protected void execute(Terminal terminal, OptionSet options, Environment env) throws Exception {
         if (Files.exists(env.pluginsFile()) == false) {
             throw new IOException("Plugins directory missing: " + env.pluginsFile());
         }
 
         terminal.println(Terminal.Verbosity.VERBOSE, "Plugins directory: " + env.pluginsFile());
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(env.pluginsFile())) {
-            for (Path plugin : stream) {
-                terminal.println(plugin.getFileName().toString());
+        final List<Path> plugins = new ArrayList<>();
+        try (DirectoryStream<Path> paths = Files.newDirectoryStream(env.pluginsFile())) {
+            for (Path plugin : paths) {
+                plugins.add(plugin);
             }
+        }
+        Collections.sort(plugins);
+        for (final Path plugin : plugins) {
+            terminal.println(plugin.getFileName().toString());
+            PluginInfo info = PluginInfo.readFromProperties(env.pluginsFile().resolve(plugin.toAbsolutePath()));
+            terminal.println(Terminal.Verbosity.VERBOSE, info.toString());
         }
     }
 }

@@ -25,16 +25,13 @@ import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.IndexGeoPointFieldData;
 import org.elasticsearch.index.fielddata.IndexNumericFieldData;
-import org.elasticsearch.index.mapper.core.DateFieldMapper;
+import org.elasticsearch.index.mapper.DateFieldMapper;
 import org.elasticsearch.search.DocValueFormat;
 import org.joda.time.DateTimeZone;
 
 import java.io.IOException;
 
-/**
- *
- */
-public enum ValueType implements Writeable<ValueType> {
+public enum ValueType implements Writeable {
 
     STRING((byte) 1, "string", "string", ValuesSourceType.BYTES,
             IndexFieldData.class, DocValueFormat.RAW),
@@ -70,12 +67,8 @@ public enum ValueType implements Writeable<ValueType> {
             return true;
         }
     },
-    IP((byte) 6, "ip", "ip", ValuesSourceType.NUMERIC, IndexNumericFieldData.class, DocValueFormat.IP) {
-        @Override
-        public boolean isNumeric() {
-            return true;
-        }
-    },
+    IP((byte) 6, "ip", "ip", ValuesSourceType.BYTES, IndexFieldData.class, DocValueFormat.IP),
+    // TODO: what is the difference between "number" and "numeric"?
     NUMERIC((byte) 7, "numeric", "numeric", ValuesSourceType.NUMERIC, IndexNumericFieldData.class, DocValueFormat.RAW) {
         @Override
         public boolean isNumeric() {
@@ -87,6 +80,12 @@ public enum ValueType implements Writeable<ValueType> {
         public boolean isGeoPoint() {
             return true;
         }
+    },
+    BOOLEAN((byte) 9, "boolean", "boolean", ValuesSourceType.NUMERIC, IndexNumericFieldData.class, DocValueFormat.BOOLEAN) {
+        @Override
+        public boolean isNumeric() {
+            return super.isNumeric();
+        }
     };
 
     final String description;
@@ -96,8 +95,8 @@ public enum ValueType implements Writeable<ValueType> {
     private final byte id;
     private String preferredName;
 
-    private ValueType(byte id, String description, String preferredName, ValuesSourceType valuesSourceType, Class<? extends IndexFieldData> fieldDataType,
-            DocValueFormat defaultFormat) {
+    ValueType(byte id, String description, String preferredName, ValuesSourceType valuesSourceType,
+            Class<? extends IndexFieldData> fieldDataType, DocValueFormat defaultFormat) {
         this.id = id;
         this.description = description;
         this.preferredName = preferredName;
@@ -158,7 +157,9 @@ public enum ValueType implements Writeable<ValueType> {
             case "byte":    return LONG;
             case "date":    return DATE;
             case "ip":      return IP;
+            case "boolean": return BOOLEAN;
             default:
+                // TODO: do not be lenient here
                 return null;
         }
     }
@@ -168,8 +169,7 @@ public enum ValueType implements Writeable<ValueType> {
         return description;
     }
 
-    @Override
-    public ValueType readFrom(StreamInput in) throws IOException {
+    public static ValueType readFromStream(StreamInput in) throws IOException {
         byte id = in.readByte();
         for (ValueType valueType : values()) {
             if (id == valueType.id) {

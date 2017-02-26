@@ -96,7 +96,7 @@ PUT my_index/my_type/1
 }
 
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 <1> The `my_integer` field is mapped as an `integer`.
 <2> The `my_string` field is mapped as a `text`, with a `keyword` <<multi-fields,multi field>>.
 
@@ -140,7 +140,7 @@ PUT my_index/my_type/1
   "long_text": "foo" <2>
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 <1> The `long_num` field is mapped as a `long`.
 <2> The `long_text` field uses the default `string` mapping.
 
@@ -198,7 +198,7 @@ PUT my_index/my_type/1
   }
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 
 [[template-variables]]
 ==== `{name}` and `{dynamic_type}`
@@ -245,7 +245,7 @@ PUT my_index/my_type/1
   "count":   5 <2>
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 <1> The `english` field is mapped as a `string` field with the `english` analyzer.
 <2> The `count` field is mapped as a `long` field with `doc_values` disabled
 
@@ -347,13 +347,13 @@ PUT my_index
 --------------------------------------------------
 
 The sub `keyword` field appears in this template to be consistent with the
-default rules of dynamic mappings. Of course if you do not need them because 
+default rules of dynamic mappings. Of course if you do not need them because
 you don't need to perform exact search or aggregate on this field, you could
 remove it as described in the previous section.
 
 ===== Time-series
 
-When doing time series analysis with elastisearch, it is common to have many
+When doing time series analysis with elasticsearch, it is common to have many
 numeric fields that you will often aggregate on but never filter on. In such a
 case, you could disable indexing on those fields to save disk space and also
 maybe gain some indexing speed:
@@ -399,28 +399,26 @@ You can override the default mappings for all indices and all types
 by specifying a `_default_` type mapping in an index template
 which matches all indices.
 
-For example, to disable the `_all` field by default for all types in all
+For example, to disable the `_field_names` field by default for all types in all
 new indices, you could create the following index template:
 
 [source,js]
 --------------------------------------------------
-PUT _template/disable_all_field
+PUT _template/disable_field_names
 {
-  "disable_all_field": {
-    "order": 0,
-    "template": "*", <1>
-    "mappings": {
-      "_default_": { <2>
-        "_all": { <3>
-          "enabled": false
-        }
+  "order": 0,
+  "index_patterns": ["*"], <1>
+  "mappings": {
+    "_default_": { <2>
+      "_field_names": { <3>
+        "enabled": false
       }
     }
   }
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 <1> Applies the mappings to an `index` which matches the pattern `*`, in other
     words, all new indices.
 <2> Defines the `_default_` type mapping types within the index.
-<3> Disables the `_all` field by default.
+<3> Disables the `_field_names` field by default.

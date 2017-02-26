@@ -22,13 +22,13 @@ package org.elasticsearch.search.suggest.completion;
 import org.apache.lucene.index.IndexableField;
 import org.elasticsearch.common.compress.CompressedXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.common.xcontent.json.JsonXContent;
 import org.elasticsearch.index.mapper.DocumentMapper;
 import org.elasticsearch.index.mapper.FieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.ParsedDocument;
+import org.elasticsearch.index.query.QueryParseContext;
 import org.elasticsearch.search.suggest.completion.context.ContextBuilder;
 import org.elasticsearch.search.suggest.completion.context.ContextMapping;
 import org.elasticsearch.search.suggest.completion.context.GeoContextMapping;
@@ -74,7 +74,7 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .field("weight", 4)
                 .endObject()
                 .startObject()
-                .field("input", "suggestion5", "suggestion6", "suggestion7")
+                .array("input", "suggestion5", "suggestion6", "suggestion7")
                 .field("weight", 5)
                 .endObject()
                 .endArray()
@@ -105,7 +105,7 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .startObject()
                 .startArray("completion")
                 .startObject()
-                .field("input", "suggestion5", "suggestion6", "suggestion7")
+                .array("input", "suggestion5", "suggestion6", "suggestion7")
                 .startObject("contexts")
                 .startObject("ctx")
                 .field("lat", 43.6624803)
@@ -139,21 +139,22 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
         MappedFieldType completionFieldType = fieldMapper.fieldType();
         ParsedDocument parsedDocument = defaultMapper.parse("test", "type1", "1", jsonBuilder()
                 .startObject()
-                .startObject("completion")
-                .field("input", "suggestion5", "suggestion6", "suggestion7")
-                .startObject("contexts")
-                .startArray("ctx")
-                .startObject()
-                .field("lat", 43.6624803)
-                .field("lon", -79.3863353)
-                .endObject()
-                .startObject()
-                .field("lat", 43.6624718)
-                .field("lon", -79.3873227)
-                .endObject()
-                .endArray()
-                .endObject()
-                .field("weight", 5)
+                    .startObject("completion")
+                        .array("input", "suggestion5", "suggestion6", "suggestion7")
+                        .startObject("contexts")
+                            .startArray("ctx")
+                                .startObject()
+                                    .field("lat", 43.6624803)
+                                    .field("lon", -79.3863353)
+                                .endObject()
+                                .startObject()
+                                    .field("lat", 43.6624718)
+                                    .field("lon", -79.3873227)
+                                .endObject()
+                            .endArray()
+                        .endObject()
+                        .field("weight", 5)
+                    .endObject()
                 .endObject()
                 .bytes());
         IndexableField[] fields = parsedDocument.rootDoc().getFields(completionFieldType.name());
@@ -184,7 +185,7 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .startObject()
                 .startArray("completion")
                 .startObject()
-                .field("input", "suggestion5", "suggestion6", "suggestion7")
+                .array("input", "suggestion5", "suggestion6", "suggestion7")
                 .field("weight", 5)
                 .startObject("contexts")
                 .array("loc1", "ezs42e44yx96")
@@ -200,9 +201,9 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
 
     public void testParsingQueryContextBasic() throws Exception {
         XContentBuilder builder = jsonBuilder().value("ezs42e44yx96");
-        XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(builder.bytes());
+        XContentParser parser = createParser(JsonXContent.jsonXContent, builder.bytes());
         GeoContextMapping mapping = ContextBuilder.geo("geo").build();
-        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(parser);
+        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(createParseContext(parser));
         assertThat(internalQueryContexts.size(), equalTo(1 + 8));
         Collection<String> locations = new ArrayList<>();
         locations.add("ezs42e");
@@ -219,9 +220,9 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .field("lat", 23.654242)
                 .field("lon", 90.047153)
                 .endObject();
-        XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(builder.bytes());
+        XContentParser parser = createParser(JsonXContent.jsonXContent, builder.bytes());
         GeoContextMapping mapping = ContextBuilder.geo("geo").build();
-        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(parser);
+        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(createParseContext(parser));
         assertThat(internalQueryContexts.size(), equalTo(1 + 8));
         Collection<String> locations = new ArrayList<>();
         locations.add("wh0n94");
@@ -242,9 +243,9 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .field("boost", 10)
                 .array("neighbours", 1, 2, 3)
                 .endObject();
-        XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(builder.bytes());
+        XContentParser parser = createParser(JsonXContent.jsonXContent, builder.bytes());
         GeoContextMapping mapping = ContextBuilder.geo("geo").build();
-        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(parser);
+        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(createParseContext(parser));
         assertThat(internalQueryContexts.size(), equalTo(1 + 1 + 8 + 1 + 8 + 1 + 8));
         Collection<String> locations = new ArrayList<>();
         locations.add("wh0n94");
@@ -280,9 +281,9 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .array("neighbours", 5)
                 .endObject()
                 .endArray();
-        XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(builder.bytes());
+        XContentParser parser = createParser(JsonXContent.jsonXContent, builder.bytes());
         GeoContextMapping mapping = ContextBuilder.geo("geo").build();
-        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(parser);
+        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(createParseContext(parser));
         assertThat(internalQueryContexts.size(), equalTo(1 + 1 + 8 + 1 + 8 + 1 + 8 + 1 + 1 + 8));
         Collection<String> firstLocations = new ArrayList<>();
         firstLocations.add("wh0n94");
@@ -323,9 +324,9 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
                 .field("lon", 92.112583)
                 .endObject()
                 .endArray();
-        XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(builder.bytes());
+        XContentParser parser = createParser(JsonXContent.jsonXContent, builder.bytes());
         GeoContextMapping mapping = ContextBuilder.geo("geo").build();
-        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(parser);
+        List<ContextMapping.InternalQueryContext> internalQueryContexts = mapping.parseQueryContext(createParseContext(parser));
         assertThat(internalQueryContexts.size(), equalTo(1 + 1 + 8 + 1 + 8 + 1 + 8));
         Collection<String> firstLocations = new ArrayList<>();
         firstLocations.add("wh0n94");
@@ -347,4 +348,8 @@ public class GeoContextMappingTests extends ESSingleNodeTestCase {
             assertThat(internalQueryContext.isPrefix, equalTo(internalQueryContext.context.length() < GeoContextMapping.DEFAULT_PRECISION));
         }
     }
+
+    private static QueryParseContext createParseContext(XContentParser parser) {
+        return new QueryParseContext(parser);
+    };
 }

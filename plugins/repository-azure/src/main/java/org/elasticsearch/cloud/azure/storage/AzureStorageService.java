@@ -25,13 +25,17 @@ import com.microsoft.azure.storage.StorageException;
 import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Setting.Property;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URISyntaxException;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Azure Storage Service interface
@@ -39,20 +43,26 @@ import java.util.Map;
  */
 public interface AzureStorageService {
 
+    ByteSizeValue MIN_CHUNK_SIZE = new ByteSizeValue(1, ByteSizeUnit.BYTES);
+    ByteSizeValue MAX_CHUNK_SIZE = new ByteSizeValue(64, ByteSizeUnit.MB);
+
     final class Storage {
         public static final String PREFIX = "cloud.azure.storage.";
+
+        public static final Setting<Settings> STORAGE_ACCOUNTS = Setting.groupSetting(Storage.PREFIX, Setting.Property.NodeScope);
+
         public static final Setting<TimeValue> TIMEOUT_SETTING =
             Setting.timeSetting("cloud.azure.storage.timeout", TimeValue.timeValueMinutes(-1), Property.NodeScope);
         public static final Setting<String> ACCOUNT_SETTING =
             Setting.simpleString("repositories.azure.account", Property.NodeScope, Property.Filtered);
         public static final Setting<String> CONTAINER_SETTING =
-            Setting.simpleString("repositories.azure.container", Property.NodeScope);
+            new Setting<>("repositories.azure.container", "elasticsearch-snapshots", Function.identity(), Property.NodeScope);
         public static final Setting<String> BASE_PATH_SETTING =
             Setting.simpleString("repositories.azure.base_path", Property.NodeScope);
         public static final Setting<String> LOCATION_MODE_SETTING =
             Setting.simpleString("repositories.azure.location_mode", Property.NodeScope);
         public static final Setting<ByteSizeValue> CHUNK_SIZE_SETTING =
-            Setting.byteSizeSetting("repositories.azure.chunk_size", new ByteSizeValue(-1), Property.NodeScope);
+            Setting.byteSizeSetting("repositories.azure.chunk_size", MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE, Property.NodeScope);
         public static final Setting<Boolean> COMPRESS_SETTING =
             Setting.boolSetting("repositories.azure.compress", false, Property.NodeScope);
     }
@@ -70,7 +80,7 @@ public interface AzureStorageService {
     void deleteBlob(String account, LocationMode mode, String container, String blob) throws URISyntaxException, StorageException;
 
     InputStream getInputStream(String account, LocationMode mode, String container, String blob)
-        throws URISyntaxException, StorageException;
+        throws URISyntaxException, StorageException, IOException;
 
     OutputStream getOutputStream(String account, LocationMode mode, String container, String blob)
         throws URISyntaxException, StorageException;
@@ -80,6 +90,4 @@ public interface AzureStorageService {
 
     void moveBlob(String account, LocationMode mode, String container, String sourceBlob, String targetBlob)
         throws URISyntaxException, StorageException;
-
-    AzureStorageService start();
 }

@@ -23,10 +23,11 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.hash.MurmurHash3;
@@ -39,7 +40,9 @@ import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.Mapper;
 import org.elasticsearch.index.mapper.MapperParsingException;
 import org.elasticsearch.index.mapper.ParseContext;
-import org.elasticsearch.index.mapper.core.TypeParsers;
+import org.elasticsearch.index.mapper.TypeParsers;
+import org.elasticsearch.index.query.QueryShardContext;
+import org.elasticsearch.index.query.QueryShardException;
 
 public class Murmur3FieldMapper extends FieldMapper {
 
@@ -89,7 +92,7 @@ public class Murmur3FieldMapper extends FieldMapper {
                 throw new MapperParsingException("Setting [index] cannot be modified for field [" + name + "]");
             }
 
-            if (parserContext.indexVersionCreated().before(Version.V_5_0_0)) {
+            if (parserContext.indexVersionCreated().before(Version.V_5_0_0_alpha2)) {
                 node.remove("precision_step");
             }
 
@@ -123,6 +126,11 @@ public class Murmur3FieldMapper extends FieldMapper {
             failIfNoDocValues();
             return new DocValuesIndexFieldData.Builder().numericType(NumericType.LONG);
         }
+
+        @Override
+        public Query termQuery(Object value, QueryShardContext context) {
+            throw new QueryShardException(context, "Murmur3 fields are not searchable: [" + name() + "]");
+        }
     }
 
     protected Murmur3FieldMapper(String simpleName, MappedFieldType fieldType, MappedFieldType defaultFieldType,
@@ -136,7 +144,7 @@ public class Murmur3FieldMapper extends FieldMapper {
     }
 
     @Override
-    protected void parseCreateField(ParseContext context, List<Field> fields)
+    protected void parseCreateField(ParseContext context, List<IndexableField> fields)
             throws IOException {
         final Object value;
         if (context.externalValueSet()) {
@@ -152,11 +160,6 @@ public class Murmur3FieldMapper extends FieldMapper {
                 fields.add(new StoredField(name(), hash));
             }
         }
-    }
-
-    @Override
-    public boolean isGenerated() {
-        return true;
     }
 
 }

@@ -33,18 +33,18 @@ import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.ParsingException;
-import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.geo.ShapesAvailability;
 import org.elasticsearch.common.geo.SpatialStrategy;
 import org.elasticsearch.common.geo.builders.ShapeBuilder;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.index.mapper.GeoShapeFieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
-import org.elasticsearch.index.mapper.geo.GeoShapeFieldMapper;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -53,9 +53,7 @@ import java.util.Objects;
  * {@link QueryBuilder} that builds a GeoShape Query
  */
 public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuilder> {
-
     public static final String NAME = "geo_shape";
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME);
 
     public static final String DEFAULT_SHAPE_INDEX_NAME = "shapes";
     public static final String DEFAULT_SHAPE_FIELD_NAME = "shape";
@@ -144,7 +142,7 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
         super(in);
         fieldName = in.readString();
         if (in.readBoolean()) {
-            shape = in.readShape();
+            shape = in.readNamedWriteable(ShapeBuilder.class);
             indexedShapeId = null;
             indexedShapeType = null;
         } else {
@@ -154,8 +152,8 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
             indexedShapeIndex = in.readOptionalString();
             indexedShapePath = in.readOptionalString();
         }
-        relation = ShapeRelation.DISJOINT.readFrom(in);
-        strategy = in.readOptionalWriteable(SpatialStrategy.RECURSIVE::readFrom);
+        relation = ShapeRelation.readFromStream(in);
+        strategy = in.readOptionalWriteable(SpatialStrategy::readFromStream);
         ignoreUnmapped = in.readBoolean();
     }
 
@@ -165,7 +163,7 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
         boolean hasShape = shape != null;
         out.writeBoolean(hasShape);
         if (hasShape) {
-            out.writeShape(shape);
+            out.writeNamedWriteable(shape);
         } else {
             out.writeOptionalString(indexedShapeId);
             out.writeOptionalString(indexedShapeType);
@@ -378,13 +376,16 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
         if (!response.isExists()) {
             throw new IllegalArgumentException("Shape with ID [" + getRequest.id() + "] in type [" + getRequest.type() + "] not found");
         }
+        if (response.isSourceEmpty()) {
+            throw new IllegalArgumentException("Shape with ID [" + getRequest.id() + "] in type [" + getRequest.type() +
+                    "] source disabled");
+        }
 
-        String[] pathElements = Strings.splitStringToArray(path, '.');
+        String[] pathElements = path.split("\\.");
         int currentPathSlot = 0;
 
-        XContentParser parser = null;
-        try {
-            parser = XContentHelper.createParser(response.getSourceAsBytesRef());
+        // It is safe to use EMPTY here because this never uses namedObject
+        try (XContentParser parser = XContentHelper.createParser(NamedXContentRegistry.EMPTY, response.getSourceAsBytesRef())) {
             XContentParser.Token currentToken;
             while ((currentToken = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
                 if (currentToken == XContentParser.Token.FIELD_NAME) {
@@ -400,10 +401,6 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
                 }
             }
             throw new IllegalStateException("Shape with name [" + getRequest.id() + "] found but missing " + path + " field");
-        } finally {
-            if (parser != null) {
-                parser.close();
-            }
         }
     }
 
@@ -492,31 +489,31 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
                     if (token == XContentParser.Token.FIELD_NAME) {
                         currentFieldName = parser.currentName();
                         token = parser.nextToken();
-                        if (parseContext.parseFieldMatcher().match(currentFieldName, SHAPE_FIELD)) {
+                        if (SHAPE_FIELD.match(currentFieldName)) {
                             shape = ShapeBuilder.parse(parser);
-                        } else if (parseContext.parseFieldMatcher().match(currentFieldName, STRATEGY_FIELD)) {
+                        } else if (STRATEGY_FIELD.match(currentFieldName)) {
                             String strategyName = parser.text();
                             strategy = SpatialStrategy.fromString(strategyName);
                             if (strategy == null) {
                                 throw new ParsingException(parser.getTokenLocation(), "Unknown strategy [" + strategyName + " ]");
                             }
-                        } else if (parseContext.parseFieldMatcher().match(currentFieldName, RELATION_FIELD)) {
+                        } else if (RELATION_FIELD.match(currentFieldName)) {
                             shapeRelation = ShapeRelation.getRelationByName(parser.text());
                             if (shapeRelation == null) {
                                 throw new ParsingException(parser.getTokenLocation(), "Unknown shape operation [" + parser.text() + " ]");
                             }
-                        } else if (parseContext.parseFieldMatcher().match(currentFieldName, INDEXED_SHAPE_FIELD)) {
+                        } else if (INDEXED_SHAPE_FIELD.match(currentFieldName)) {
                             while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
                                 if (token == XContentParser.Token.FIELD_NAME) {
                                     currentFieldName = parser.currentName();
                                 } else if (token.isValue()) {
-                                    if (parseContext.parseFieldMatcher().match(currentFieldName, SHAPE_ID_FIELD)) {
+                                    if (SHAPE_ID_FIELD.match(currentFieldName)) {
                                         id = parser.text();
-                                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, SHAPE_TYPE_FIELD)) {
+                                    } else if (SHAPE_TYPE_FIELD.match(currentFieldName)) {
                                         type = parser.text();
-                                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, SHAPE_INDEX_FIELD)) {
+                                    } else if (SHAPE_INDEX_FIELD.match(currentFieldName)) {
                                         index = parser.text();
-                                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, SHAPE_PATH_FIELD)) {
+                                    } else if (SHAPE_PATH_FIELD.match(currentFieldName)) {
                                         shapePath = parser.text();
                                     }
                                 } else {
@@ -531,11 +528,11 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
                     }
                 }
             } else if (token.isValue()) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
+                if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
                     boost = parser.floatValue();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
+                } else if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
                     queryName = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, IGNORE_UNMAPPED_FIELD)) {
+                } else if (IGNORE_UNMAPPED_FIELD.match(currentFieldName)) {
                     ignoreUnmapped = parser.booleanValue();
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "[" + GeoShapeQueryBuilder.NAME +
@@ -594,7 +591,7 @@ public class GeoShapeQueryBuilder extends AbstractQueryBuilder<GeoShapeQueryBuil
     }
 
     @Override
-    protected QueryBuilder<GeoShapeQueryBuilder> doRewrite(QueryRewriteContext queryShardContext) throws IOException {
+    protected QueryBuilder doRewrite(QueryRewriteContext queryShardContext) throws IOException {
         if (this.shape == null) {
             GetRequest getRequest = new GetRequest(indexedShapeIndex, indexedShapeType, indexedShapeId);
             ShapeBuilder shape = fetch(queryShardContext.getClient(), getRequest, indexedShapePath);

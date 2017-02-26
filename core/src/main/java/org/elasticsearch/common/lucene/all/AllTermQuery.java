@@ -32,7 +32,6 @@ import org.apache.lucene.search.CollectionStatistics;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Explanation;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.TermQuery;
@@ -45,6 +44,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.SmallFloat;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -63,27 +63,41 @@ public final class AllTermQuery extends Query {
         this.term = term;
     }
 
+    public Term getTerm() {
+        return term;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (sameClassAs(obj) == false) {
+            return false;
+        }
+        return Objects.equals(term, ((AllTermQuery) obj).term);
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * classHash() + term.hashCode();
+    }
+
     @Override
     public Query rewrite(IndexReader reader) throws IOException {
         Query rewritten = super.rewrite(reader);
         if (rewritten != this) {
             return rewritten;
         }
-        boolean fieldExists = false;
         boolean hasPayloads = false;
         for (LeafReaderContext context : reader.leaves()) {
             final Terms terms = context.reader().terms(term.field());
             if (terms != null) {
-                fieldExists = true;
                 if (terms.hasPayloads()) {
                     hasPayloads = true;
                     break;
                 }
             }
         }
-        if (fieldExists == false) {
-            return new MatchNoDocsQuery();
-        }
+        // if the terms does not exist we could return a MatchNoDocsQuery but this would break the unified highlighter
+        // which rewrites query with an empty reader.
         if (hasPayloads == false) {
             return new TermQuery(term);
         }
@@ -103,12 +117,12 @@ public final class AllTermQuery extends Query {
         return new Weight(this) {
 
             @Override
-            public final float getValueForNormalization() throws IOException {
+            public float getValueForNormalization() throws IOException {
                 return stats.getValueForNormalization();
             }
 
             @Override
-            public final void normalize(float norm, float topLevelBoost) {
+            public void normalize(float norm, float topLevelBoost) {
                 stats.normalize(norm, topLevelBoost);
             }
 

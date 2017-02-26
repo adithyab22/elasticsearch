@@ -1,12 +1,15 @@
 @echo off
 
-if DEFINED JAVA_HOME goto cont
+IF DEFINED JAVA_HOME (
+  set JAVA="%JAVA_HOME%\bin\java.exe"
+) ELSE (
+  FOR %%I IN (java.exe) DO set JAVA=%%~$PATH:I
+)
+IF NOT EXIST %JAVA% (
+  ECHO Could not find any executable java binary. Please install java in your PATH or set JAVA_HOME 1>&2
+  EXIT /B 1
+)
 
-:err
-ECHO JAVA_HOME environment variable must be set! 1>&2
-EXIT /B 1
-
-:cont
 set SCRIPT_DIR=%~dp0
 for %%I in ("%SCRIPT_DIR%..") do set ES_HOME=%%~dpfI
 
@@ -19,4 +22,12 @@ ECHO additional elements via the plugin mechanism, or if code must really be 1>&
 ECHO added to the main classpath, add jars to lib\, unsupported 1>&2
 EXIT /B 1
 )
+
+%JAVA% -cp "%ES_CLASSPATH%" "org.elasticsearch.tools.JavaVersionChecker"
+
+IF ERRORLEVEL 1 (
+    ECHO Elasticsearch requires at least Java 8 but your Java version from %JAVA% does not meet this requirement
+    EXIT /B 1
+)
+
 set ES_PARAMS=-Delasticsearch -Des.path.home="%ES_HOME%"

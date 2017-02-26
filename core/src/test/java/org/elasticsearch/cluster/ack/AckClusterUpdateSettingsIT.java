@@ -69,7 +69,10 @@ public class AckClusterUpdateSettingsIT extends ESIntegTestCase {
     private void removePublishTimeout() {
         //to test that the acknowledgement mechanism is working we better disable the wait for publish
         //otherwise the operation is most likely acknowledged even if it doesn't support ack
-        assertAcked(client().admin().cluster().prepareUpdateSettings().setTransientSettings(Settings.builder().put(DiscoverySettings.PUBLISH_TIMEOUT_SETTING.getKey(), "0")));
+        assertAcked(client().admin().cluster().prepareUpdateSettings().setTransientSettings(Settings.builder()
+            .put(DiscoverySettings.PUBLISH_TIMEOUT_SETTING.getKey(), "0")
+            .put(DiscoverySettings.COMMIT_TIMEOUT_SETTING.getKey(), "30s")
+        ));
     }
 
     public void testClusterUpdateSettingsAcknowledgement() {
@@ -81,7 +84,7 @@ public class AckClusterUpdateSettingsIT extends ESIntegTestCase {
 
         NodesInfoResponse nodesInfo = client().admin().cluster().prepareNodesInfo().get();
         String excludedNodeId = null;
-        for (NodeInfo nodeInfo : nodesInfo) {
+        for (NodeInfo nodeInfo : nodesInfo.getNodes()) {
             if (nodeInfo.getNode().isDataNode()) {
                 excludedNodeId = nodeInfo.getNode().getId();
                 break;
@@ -96,7 +99,7 @@ public class AckClusterUpdateSettingsIT extends ESIntegTestCase {
 
         for (Client client : clients()) {
             ClusterState clusterState = getLocalClusterState(client);
-            assertThat(clusterState.getRoutingNodes().metaData().transientSettings().get("cluster.routing.allocation.exclude._id"), equalTo(excludedNodeId));
+            assertThat(clusterState.metaData().transientSettings().get("cluster.routing.allocation.exclude._id"), equalTo(excludedNodeId));
             for (IndexRoutingTable indexRoutingTable : clusterState.routingTable()) {
                 for (IndexShardRoutingTable indexShardRoutingTable : indexRoutingTable) {
                     for (ShardRouting shardRouting : indexShardRoutingTable) {
@@ -124,7 +127,7 @@ public class AckClusterUpdateSettingsIT extends ESIntegTestCase {
 
         NodesInfoResponse nodesInfo = client().admin().cluster().prepareNodesInfo().get();
         String excludedNodeId = null;
-        for (NodeInfo nodeInfo : nodesInfo) {
+        for (NodeInfo nodeInfo : nodesInfo.getNodes()) {
             if (nodeInfo.getNode().isDataNode()) {
                 excludedNodeId = nodeInfo.getNode().getId();
                 break;

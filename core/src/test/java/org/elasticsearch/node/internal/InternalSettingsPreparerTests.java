@@ -19,48 +19,60 @@
 
 package org.elasticsearch.node.internal;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import org.elasticsearch.cli.MockTerminal;
 import org.elasticsearch.cluster.ClusterName;
+import org.elasticsearch.common.settings.MockSecureSettings;
+import org.elasticsearch.common.settings.SecureSetting;
+import org.elasticsearch.common.settings.SecureString;
+import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsException;
 import org.elasticsearch.env.Environment;
+import org.elasticsearch.node.InternalSettingsPreparer;
 import org.elasticsearch.test.ESTestCase;
 import org.junit.After;
 import org.junit.Before;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 
 public class InternalSettingsPreparerTests extends ESTestCase {
 
+    Path homeDir;
     Settings baseEnvSettings;
 
     @Before
     public void createBaseEnvSettings() {
+        homeDir = createTempDir();
         baseEnvSettings = Settings.builder()
-            .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
+            .put(Environment.PATH_HOME_SETTING.getKey(), homeDir)
             .build();
     }
 
     @After
     public void clearBaseEnvSettings() {
+        homeDir = null;
         baseEnvSettings = null;
     }
 
     public void testEmptySettings() {
         Settings settings = InternalSettingsPreparer.prepareSettings(Settings.EMPTY);
-        assertNotNull(settings.get("node.name")); // a name was set
+        assertNull(settings.get("node.name")); // a name was not set
         assertNotNull(settings.get(ClusterName.CLUSTER_NAME_SETTING.getKey())); // a cluster name was set
         int size = settings.names().size();
 
         Environment env = InternalSettingsPreparer.prepareEnvironment(baseEnvSettings, null);
         settings = env.settings();
-        assertNotNull(settings.get("node.name")); // a name was set
+        assertNull(settings.get("node.name")); // a name was not set
         assertNotNull(settings.get(ClusterName.CLUSTER_NAME_SETTING.getKey())); // a cluster name was set
         assertEquals(settings.toString(), size + 1 /* path.home is in the base settings */, settings.names().size());
         String home = Environment.PATH_HOME_SETTING.get(baseEnvSettings);
@@ -68,11 +80,11 @@ public class InternalSettingsPreparerTests extends ESTestCase {
         assertTrue(configDir, configDir.startsWith(home));
     }
 
-    public void testClusterNameDefault() {
+    public void testDefaultClusterName() {
         Settings settings = InternalSettingsPreparer.prepareSettings(Settings.EMPTY);
-        assertEquals(ClusterName.DEFAULT.value(), settings.get(ClusterName.CLUSTER_NAME_SETTING.getKey()));
-        settings = InternalSettingsPreparer.prepareEnvironment(baseEnvSettings, null).settings();
-        assertEquals(ClusterName.DEFAULT.value(), settings.get(ClusterName.CLUSTER_NAME_SETTING.getKey()));
+        assertEquals("elasticsearch", settings.get("cluster.name"));
+        settings = InternalSettingsPreparer.prepareSettings(Settings.builder().put("cluster.name", "foobar").build());
+        assertEquals("foobar", settings.get("cluster.name"));
     }
 
     public void testReplacePromptPlaceholders() {
@@ -134,7 +146,6 @@ public class InternalSettingsPreparerTests extends ESTestCase {
             Files.createDirectory(config);
             Files.copy(garbage, config.resolve("elasticsearch.yml"));
             InternalSettingsPreparer.prepareEnvironment(Settings.builder()
-                .put("config.ignore_system_properties", true)
                 .put(baseEnvSettings)
                 .build(), null);
         } catch (SettingsException e) {
@@ -153,7 +164,6 @@ public class InternalSettingsPreparerTests extends ESTestCase {
 
         try {
             InternalSettingsPreparer.prepareEnvironment(Settings.builder()
-                .put("config.ignore_system_properties", true)
                 .put(baseEnvSettings)
                 .build(), null);
         } catch (SettingsException e) {
@@ -161,5 +171,29 @@ public class InternalSettingsPreparerTests extends ESTestCase {
             assertTrue(e.getMessage(), e.getMessage().contains(".yaml"));
             assertTrue(e.getMessage(), e.getMessage().contains(".properties"));
         }
+    }
+
+    public void testSecureSettings() {
+        MockSecureSettings secureSettings = new MockSecureSettings();
+        secureSettings.setString("foo", "secret");
+        Settings input = Settings.builder().put(baseEnvSettings).setSecureSettings(secureSettings).build();
+        Environment env = InternalSettingsPreparer.prepareEnvironment(input, null);
+        Setting<SecureString> fakeSetting = SecureSetting.secureString("foo", null, false);
+        assertEquals("secret", fakeSetting.get(env.settings()).toString());
+    }
+
+    public void testDefaultProperties() throws Exception {
+        Map<String, String> props = Collections.singletonMap("default.setting", "foo");
+        Environment env = InternalSettingsPreparer.prepareEnvironment(baseEnvSettings, null, props);
+        assertEquals("foo", env.settings().get("setting"));
+    }
+
+    public void testDefaultPropertiesOverride() throws Exception {
+        Path configDir = homeDir.resolve("config");
+        Files.createDirectories(configDir);
+        Files.write(configDir.resolve("elasticsearch.yml"), Collections.singletonList("setting: bar"), StandardCharsets.UTF_8);
+        Map<String, String> props = Collections.singletonMap("default.setting", "foo");
+        Environment env = InternalSettingsPreparer.prepareEnvironment(baseEnvSettings, null, props);
+        assertEquals("bar", env.settings().get("setting"));
     }
 }

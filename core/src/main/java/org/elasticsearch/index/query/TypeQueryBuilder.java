@@ -36,7 +36,6 @@ import java.util.Objects;
 
 public class TypeQueryBuilder extends AbstractQueryBuilder<TypeQueryBuilder> {
     public static final String NAME = "type";
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME);
 
     private static final ParseField VALUE_FIELD = new ParseField("value");
 
@@ -94,11 +93,11 @@ public class TypeQueryBuilder extends AbstractQueryBuilder<TypeQueryBuilder> {
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token.isValue()) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
+                if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
                     queryName = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
+                } else if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
                     boost = parser.floatValue();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, VALUE_FIELD)) {
+                } else if (VALUE_FIELD.match(currentFieldName)) {
                     type = parser.utf8Bytes();
                 } else {
                     throw new ParsingException(parser.getTokenLocation(),

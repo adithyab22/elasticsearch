@@ -18,6 +18,9 @@ sudo bin/elasticsearch-plugin install repository-azure
 The plugin must be installed on every node in the cluster, and each node must
 be restarted after installation.
 
+This plugin can be downloaded for <<plugin-management-custom-url,offline install>> from
+{plugin_url}/repository-azure/repository-azure-{version}.zip.
+
 [[repository-azure-remove]]
 [float]
 ==== Removal
@@ -99,7 +102,8 @@ The Azure repository supports following settings:
 
 `container`::
 
-    Container name. Defaults to `elasticsearch-snapshots`
+    Container name. You must create the azure container before creating the repository.
+    Defaults to `elasticsearch-snapshots`.
 
 `base_path`::
 
@@ -118,18 +122,18 @@ The Azure repository supports following settings:
     setting doesn't affect index files that are already compressed by default.
     Defaults to `false`.
 
-`read_only`::
+`readonly`::
 
-    Makes repository read-only. coming[2.1.0]  Defaults to `false`.
+    Makes repository read-only. Defaults to `false`.
 
 `location_mode`::
 
     `primary_only` or `secondary_only`. Defaults to `primary_only`. Note that if you set it
-    to `secondary_only`, it will force `read_only` to true.
+    to `secondary_only`, it will force `readonly` to true.
 
 Some examples, using scripts:
 
-[source,json]
+[source,js]
 ----
 # The simpliest one
 PUT _snapshot/my_backup1
@@ -167,7 +171,8 @@ PUT _snapshot/my_backup4
     }
 }
 ----
-// AUTOSENSE
+// CONSOLE
+// TEST[skip:we don't have azure setup while testing this]
 
 Example using Java:
 
@@ -207,4 +212,3 @@ be a valid DNS name, conforming to the following naming rules:
 permitted in container names.
 * All letters in a container name must be lowercase.
 * Container names must be from 3 through 63 characters long.
-

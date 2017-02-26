@@ -20,7 +20,7 @@ package org.elasticsearch.search.suggest.completion;
 
 import org.apache.lucene.search.suggest.document.CompletionQuery;
 import org.elasticsearch.common.unit.Fuzziness;
-import org.elasticsearch.index.mapper.core.CompletionFieldMapper;
+import org.elasticsearch.index.mapper.CompletionFieldMapper;
 import org.elasticsearch.index.query.QueryShardContext;
 import org.elasticsearch.search.suggest.SuggestionSearchContext;
 import org.elasticsearch.search.suggest.completion.context.ContextMapping;
@@ -30,9 +30,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-/**
- *
- */
 public class CompletionSuggestionContext extends SuggestionSearchContext.SuggestionContext {
 
     protected CompletionSuggestionContext(QueryShardContext shardContext) {
@@ -43,7 +40,6 @@ public class CompletionSuggestionContext extends SuggestionSearchContext.Suggest
     private FuzzyOptions fuzzyOptions;
     private RegexOptions regexOptions;
     private Map<String, List<ContextMapping.InternalQueryContext>> queryContexts = Collections.emptyMap();
-    private List<String> payloadFields = Collections.emptyList();
 
     CompletionFieldMapper.CompletionFieldType getFieldType() {
         return this.fieldType;
@@ -63,14 +59,6 @@ public class CompletionSuggestionContext extends SuggestionSearchContext.Suggest
 
     void setQueryContexts(Map<String, List<ContextMapping.InternalQueryContext>> queryContexts) {
         this.queryContexts = queryContexts;
-    }
-
-    void setPayloadFields(List<String> fields) {
-        this.payloadFields = fields;
-    }
-
-    List<String> getPayloadFields() {
-        return payloadFields;
     }
 
     public FuzzyOptions getFuzzyOptions() {
@@ -116,4 +104,5 @@ public class CompletionSuggestionContext extends SuggestionSearchContext.Suggest
         }
         return query;
     }
+
 }

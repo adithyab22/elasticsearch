@@ -27,6 +27,7 @@ import org.elasticsearch.common.xcontent.ObjectParser;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.index.query.QueryParseContext;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -123,11 +124,12 @@ public final class GeoQueryContext implements ToXContent {
         GEO_CONTEXT_PARSER.declareDouble(GeoQueryContext.Builder::setLon, new ParseField("lon"));
     }
 
-    public static GeoQueryContext fromXContent(XContentParser parser) throws IOException {
+    public static GeoQueryContext fromXContent(QueryParseContext context) throws IOException {
+        XContentParser parser = context.parser();
         XContentParser.Token token = parser.currentToken();
         GeoQueryContext.Builder builder = new Builder();
         if (token == XContentParser.Token.START_OBJECT) {
-            GEO_CONTEXT_PARSER.parse(parser, builder);
+            GEO_CONTEXT_PARSER.parse(parser, builder, null);
         } else if (token == XContentParser.Token.VALUE_STRING) {
             builder.setGeoPoint(GeoPoint.fromGeohash(parser.text()));
         } else {

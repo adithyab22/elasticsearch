@@ -33,7 +33,7 @@ GET my_index/_search
   }
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 
 
 [[ip-params]]
@@ -53,14 +53,6 @@ The following parameters are accepted by `ip` fields:
     Should the field be stored on disk in a column-stride fashion, so that it
     can later be used for sorting, aggregations, or scripting? Accepts `true`
     (default) or `false`.
-
-<<include-in-all,`include_in_all`>>::
-
-    Whether or not the field value should be included in the
-    <<mapping-all-field,`_all`>> field? Accepts `true` or `false`.  Defaults
-    to `false` if <<mapping-index,`index`>> is set to `false`, or if a parent
-    <<object,`object`>> field sets `include_in_all` to `false`.
-    Otherwise defaults to `true`.
 
 <<mapping-index,`index`>>::
 
@@ -104,6 +96,23 @@ GET my_index/_search
   "query": {
     "term": {
       "ip_addr": "2001:db8::/48"
+    }
+  }
+}
+--------------------------------------------------
+
+Also beware that colons are special characters to the
+<<query-dsl-query-string-query,`query_string`>> query, so ipv6 addresses will
+need to be escaped. The easiest way to do so is to put quotes around the
+searched value:
+
+[source,js]
+--------------------------------------------------
+GET t/_search
+{
+  "query": {
+    "query_string" : {
+      "query": "ip_addr:\"2001:db8::/48\""
     }
   }
 }

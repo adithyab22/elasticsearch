@@ -40,3 +40,9 @@ thirdPartyAudit.excludes = [
   'org.slf4j.Logger',
   'org.slf4j.LoggerFactory',
 ]
+
+integTestCluster {
+  setting 'cloud.azure.storage.my_account_test.account', 'cloudazureresource'
+  setting 'cloud.azure.storage.my_account_test.key', 'abcdefgh'
+  setting 'script.stored', 'true'
+}

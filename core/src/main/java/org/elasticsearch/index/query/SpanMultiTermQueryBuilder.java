@@ -35,20 +35,19 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * Query that allows wraping a {@link MultiTermQueryBuilder} (one of wildcard, fuzzy, prefix, term, range or regexp query)
+ * Query that allows wrapping a {@link MultiTermQueryBuilder} (one of wildcard, fuzzy, prefix, term, range or regexp query)
  * as a {@link SpanQueryBuilder} so it can be nested.
  */
 public class SpanMultiTermQueryBuilder extends AbstractQueryBuilder<SpanMultiTermQueryBuilder>
-        implements SpanQueryBuilder<SpanMultiTermQueryBuilder> {
+        implements SpanQueryBuilder {
 
     public static final String NAME = "span_multi";
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME);
 
     private static final ParseField MATCH_FIELD = new ParseField("match");
 
-    private final MultiTermQueryBuilder<?> multiTermQueryBuilder;
+    private final MultiTermQueryBuilder multiTermQueryBuilder;
 
-    public SpanMultiTermQueryBuilder(MultiTermQueryBuilder<?> multiTermQueryBuilder) {
+    public SpanMultiTermQueryBuilder(MultiTermQueryBuilder multiTermQueryBuilder) {
         if (multiTermQueryBuilder == null) {
             throw new IllegalArgumentException("inner multi term query cannot be null");
         }
@@ -60,15 +59,15 @@ public class SpanMultiTermQueryBuilder extends AbstractQueryBuilder<SpanMultiTer
      */
     public SpanMultiTermQueryBuilder(StreamInput in) throws IOException {
         super(in);
-        multiTermQueryBuilder = (MultiTermQueryBuilder<?>) in.readQuery();
+        multiTermQueryBuilder = (MultiTermQueryBuilder) in.readNamedWriteable(QueryBuilder.class);
     }
 
     @Override
     protected void doWriteTo(StreamOutput out) throws IOException {
-        out.writeQuery(multiTermQueryBuilder);
+        out.writeNamedWriteable(multiTermQueryBuilder);
     }
 
-    public MultiTermQueryBuilder<?> innerQuery() {
+    public MultiTermQueryBuilder innerQuery() {
         return this.multiTermQueryBuilder;
     }
 
@@ -93,20 +92,20 @@ public class SpanMultiTermQueryBuilder extends AbstractQueryBuilder<SpanMultiTer
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token == XContentParser.Token.START_OBJECT) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, MATCH_FIELD)) {
-                    QueryBuilder innerQuery = parseContext.parseInnerQueryBuilder();
-                    if (innerQuery instanceof MultiTermQueryBuilder == false) {
+                if (MATCH_FIELD.match(currentFieldName)) {
+                    QueryBuilder query = parseContext.parseInnerQueryBuilder();
+                    if (query instanceof MultiTermQueryBuilder == false) {
                         throw new ParsingException(parser.getTokenLocation(),
                                 "[span_multi] [" + MATCH_FIELD.getPreferredName() + "] must be of type multi term query");
                     }
-                    subQuery = (MultiTermQueryBuilder) innerQuery;
+                    subQuery = (MultiTermQueryBuilder) query;
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "[span_multi] query does not support [" + currentFieldName + "]");
                 }
             } else if (token.isValue()) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
+                if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
                     queryName = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
+                } else if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
                     boost = parser.floatValue();
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "[span_multi] query does not support [" + currentFieldName + "]");

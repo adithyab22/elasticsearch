@@ -24,7 +24,6 @@ import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.EmptyQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.aggregations.bucket.filters.Filters;
 import org.elasticsearch.search.aggregations.bucket.filters.FiltersAggregator.KeyedFilter;
@@ -52,9 +51,6 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsNull.notNullValue;
 
-/**
- *
- */
 @ESIntegTestCase.SuiteScopeTestCase
 public class FiltersIT extends ESIntegTestCase {
 
@@ -138,7 +134,7 @@ public class FiltersIT extends ESIntegTestCase {
     // See NullPointer issue when filters are empty:
     // https://github.com/elastic/elasticsearch/issues/8438
     public void testEmptyFilterDeclarations() throws Exception {
-        QueryBuilder<?> emptyFilter = new BoolQueryBuilder();
+        QueryBuilder emptyFilter = new BoolQueryBuilder();
         SearchResponse response = client().prepareSearch("idx")
                 .addAggregation(filters("tags", randomOrder(new KeyedFilter("all", emptyFilter),
                         new KeyedFilter("tag1", termQuery("tag", "tag1")))))
@@ -169,6 +165,7 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(filters.getName(), equalTo("tags"));
 
         assertThat(filters.getBuckets().size(), equalTo(2));
+        assertThat(filters.getProperty("_bucket_count"), equalTo(2));
         Object[] propertiesKeys = (Object[]) filters.getProperty("_key");
         Object[] propertiesDocCounts = (Object[]) filters.getProperty("_count");
         Object[] propertiesCounts = (Object[]) filters.getProperty("avg_value.value");
@@ -201,35 +198,9 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(avgValue, notNullValue());
         assertThat(avgValue.getName(), equalTo("avg_value"));
         assertThat(avgValue.getValue(), equalTo((double) sum / numTag2Docs));
-        assertThat((String) propertiesKeys[1], equalTo("tag2"));
-        assertThat((long) propertiesDocCounts[1], equalTo((long) numTag2Docs));
-        assertThat((double) propertiesCounts[1], equalTo((double) sum / numTag2Docs));
-    }
-
-    public void testEmptyFilter() throws Exception {
-        QueryBuilder<?> emptyFilter = new EmptyQueryBuilder();
-        SearchResponse response = client().prepareSearch("idx").addAggregation(filters("tag1", emptyFilter)).execute().actionGet();
-
-        assertSearchResponse(response);
-
-        Filters filter = response.getAggregations().get("tag1");
-        assertThat(filter, notNullValue());
-        assertThat(filter.getBuckets().size(), equalTo(1));
-        assertThat(filter.getBuckets().get(0).getDocCount(), equalTo((long) numDocs));
-    }
-
-    public void testEmptyKeyedFilter() throws Exception {
-        QueryBuilder<?> emptyFilter = new EmptyQueryBuilder();
-        SearchResponse response = client().prepareSearch("idx").addAggregation(filters("tag1", new KeyedFilter("foo", emptyFilter)))
-                .execute().actionGet();
-
-        assertSearchResponse(response);
-
-        Filters filter = response.getAggregations().get("tag1");
-        assertThat(filter, notNullValue());
-        assertThat(filter.getBuckets().size(), equalTo(1));
-        assertThat(filter.getBuckets().get(0).getKey(), equalTo("foo"));
-        assertThat(filter.getBuckets().get(0).getDocCount(), equalTo((long) numDocs));
+        assertThat(propertiesKeys[1], equalTo("tag2"));
+        assertThat(propertiesDocCounts[1], equalTo((long) numTag2Docs));
+        assertThat(propertiesCounts[1], equalTo((double) sum / numTag2Docs));
     }
 
     public void testAsSubAggregation() {
@@ -413,6 +384,7 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(filters.getName(), equalTo("tags"));
 
         assertThat(filters.getBuckets().size(), equalTo(3));
+        assertThat(filters.getProperty("_bucket_count"), equalTo(3));
         Object[] propertiesKeys = (Object[]) filters.getProperty("_key");
         Object[] propertiesDocCounts = (Object[]) filters.getProperty("_count");
         Object[] propertiesCounts = (Object[]) filters.getProperty("avg_value.value");
@@ -429,9 +401,9 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(avgValue, notNullValue());
         assertThat(avgValue.getName(), equalTo("avg_value"));
         assertThat(avgValue.getValue(), equalTo((double) sum / numTag1Docs));
-        assertThat((String) propertiesKeys[0], equalTo("tag1"));
-        assertThat((long) propertiesDocCounts[0], equalTo((long) numTag1Docs));
-        assertThat((double) propertiesCounts[0], equalTo((double) sum / numTag1Docs));
+        assertThat(propertiesKeys[0], equalTo("tag1"));
+        assertThat(propertiesDocCounts[0], equalTo((long) numTag1Docs));
+        assertThat(propertiesCounts[0], equalTo((double) sum / numTag1Docs));
 
         bucket = filters.getBucketByKey("tag2");
         assertThat(bucket, Matchers.notNullValue());
@@ -445,9 +417,9 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(avgValue, notNullValue());
         assertThat(avgValue.getName(), equalTo("avg_value"));
         assertThat(avgValue.getValue(), equalTo((double) sum / numTag2Docs));
-        assertThat((String) propertiesKeys[1], equalTo("tag2"));
-        assertThat((long) propertiesDocCounts[1], equalTo((long) numTag2Docs));
-        assertThat((double) propertiesCounts[1], equalTo((double) sum / numTag2Docs));
+        assertThat(propertiesKeys[1], equalTo("tag2"));
+        assertThat(propertiesDocCounts[1], equalTo((long) numTag2Docs));
+        assertThat(propertiesCounts[1], equalTo((double) sum / numTag2Docs));
 
         bucket = filters.getBucketByKey("_other_");
         assertThat(bucket, Matchers.notNullValue());
@@ -461,9 +433,9 @@ public class FiltersIT extends ESIntegTestCase {
         assertThat(avgValue, notNullValue());
         assertThat(avgValue.getName(), equalTo("avg_value"));
         assertThat(avgValue.getValue(), equalTo((double) sum / numOtherDocs));
-        assertThat((String) propertiesKeys[2], equalTo("_other_"));
-        assertThat((long) propertiesDocCounts[2], equalTo((long) numOtherDocs));
-        assertThat((double) propertiesCounts[2], equalTo((double) sum / numOtherDocs));
+        assertThat(propertiesKeys[2], equalTo("_other_"));
+        assertThat(propertiesDocCounts[2], equalTo((long) numOtherDocs));
+        assertThat(propertiesCounts[2], equalTo((double) sum / numOtherDocs));
     }
 
     public void testEmptyAggregationWithOtherBucket() throws Exception {

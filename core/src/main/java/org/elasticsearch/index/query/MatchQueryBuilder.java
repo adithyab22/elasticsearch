@@ -19,8 +19,6 @@
 
 package org.elasticsearch.index.query;
 
-import org.apache.lucene.queries.ExtendedCommonTermsQuery;
-import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.Query;
 import org.elasticsearch.common.ParseField;
@@ -60,8 +58,6 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
 
     /** The name for the match query */
     public static final String NAME = "match";
-
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME, "match_fuzzy", "fuzzy_match");
 
     /** The default mode terms are combined in a match query */
     public static final Operator DEFAULT_OPERATOR = Operator.OR;
@@ -267,7 +263,7 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
      */
     public MatchQueryBuilder prefixLength(int prefixLength) {
         if (prefixLength < 0 ) {
-            throw new IllegalArgumentException("No negative prefix length allowed.");
+            throw new IllegalArgumentException("[" + NAME + "] requires prefix length to be non-negative.");
         }
         this.prefixLength = prefixLength;
         return this;
@@ -284,8 +280,8 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
      * When using fuzzy or prefix type query, the number of term expansions to use.
      */
     public MatchQueryBuilder maxExpansions(int maxExpansions) {
-        if (maxExpansions < 0 ) {
-            throw new IllegalArgumentException("No negative maxExpansions allowed.");
+        if (maxExpansions <= 0 ) {
+            throw new IllegalArgumentException("[" + NAME + "] requires maxExpansions to be positive.");
         }
         this.maxExpansions = maxExpansions;
         return this;
@@ -443,7 +439,7 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
     @Override
     protected Query doToQuery(QueryShardContext context) throws IOException {
         // validate context specific fields
-        if (analyzer != null && context.getAnalysisService().analyzer(analyzer) == null) {
+        if (analyzer != null && context.getIndexAnalyzers().get(analyzer) == null) {
             throw new QueryShardException(context, "[" + NAME + "] analyzer [" + analyzer + "] not found");
         }
 
@@ -455,25 +451,13 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
         matchQuery.setFuzzyPrefixLength(prefixLength);
         matchQuery.setMaxExpansions(maxExpansions);
         matchQuery.setTranspositions(fuzzyTranspositions);
-        matchQuery.setFuzzyRewriteMethod(QueryParsers.parseRewriteMethod(context.parseFieldMatcher(), fuzzyRewrite, null));
+        matchQuery.setFuzzyRewriteMethod(QueryParsers.parseRewriteMethod(fuzzyRewrite, null));
         matchQuery.setLenient(lenient);
         matchQuery.setCommonTermsCutoff(cutoffFrequency);
         matchQuery.setZeroTermsQuery(zeroTermsQuery);
 
         Query query = matchQuery.parse(type, fieldName, value);
-        if (query == null) {
-            return null;
-        }
-
-        // If the coordination factor is disabled on a boolean query we don't apply the minimum should match.
-        // This is done to make sure that the minimum_should_match doesn't get applied when there is only one word
-        // and multiple variations of the same word in the query (synonyms for instance).
-        if (query instanceof BooleanQuery && !((BooleanQuery) query).isCoordDisabled()) {
-            query = Queries.applyMinimumShouldMatch((BooleanQuery) query, minimumShouldMatch);
-        } else if (query instanceof ExtendedCommonTermsQuery) {
-            ((ExtendedCommonTermsQuery)query).setLowFreqMinimumNumberShouldMatch(minimumShouldMatch);
-        }
-        return query;
+        return Queries.maybeApplyMinimumShouldMatch(query, minimumShouldMatch);
     }
 
     @Override
@@ -509,13 +493,7 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
 
     public static MatchQueryBuilder fromXContent(QueryParseContext parseContext) throws IOException {
         XContentParser parser = parseContext.parser();
-
-        XContentParser.Token token = parser.nextToken();
-        if (token != XContentParser.Token.FIELD_NAME) {
-            throw new ParsingException(parser.getTokenLocation(), "[" + MatchQueryBuilder.NAME + "] query malformed, no field");
-        }
-        String fieldName = parser.currentName();
-
+        String fieldName = null;
         MatchQuery.Type type = MatchQuery.Type.BOOLEAN;
         Object value = null;
         float boost = AbstractQueryBuilder.DEFAULT_BOOST;
@@ -532,80 +510,82 @@ public class MatchQueryBuilder extends AbstractQueryBuilder<MatchQueryBuilder> {
         Float cutOffFrequency = null;
         ZeroTermsQuery zeroTermsQuery = MatchQuery.DEFAULT_ZERO_TERMS_QUERY;
         String queryName = null;
-
-        token = parser.nextToken();
-        if (token == XContentParser.Token.START_OBJECT) {
-            String currentFieldName = null;
-            while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
-                if (token == XContentParser.Token.FIELD_NAME) {
-                    currentFieldName = parser.currentName();
-                } else if (token.isValue()) {
-                    if (parseContext.parseFieldMatcher().match(currentFieldName, QUERY_FIELD)) {
-                        value = parser.objectText();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, TYPE_FIELD)) {
-                        String tStr = parser.text();
-                        if ("boolean".equals(tStr)) {
-                            type = MatchQuery.Type.BOOLEAN;
-                        } else if ("phrase".equals(tStr)) {
-                            type = MatchQuery.Type.PHRASE;
-                        } else if ("phrase_prefix".equals(tStr) || ("phrasePrefix".equals(tStr))) {
-                            type = MatchQuery.Type.PHRASE_PREFIX;
-                        } else {
-                            throw new ParsingException(parser.getTokenLocation(), "[" + NAME + "] query does not support type " + tStr);
-                        }
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, ANALYZER_FIELD)) {
-                        analyzer = parser.text();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
-                        boost = parser.floatValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, SLOP_FIELD)) {
-                        slop = parser.intValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, Fuzziness.FIELD)) {
-                        fuzziness = Fuzziness.parse(parser);
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, PREFIX_LENGTH_FIELD)) {
-                        prefixLength = parser.intValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, MAX_EXPANSIONS_FIELD)) {
-                        maxExpansion = parser.intValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, OPERATOR_FIELD)) {
-                        operator = Operator.fromString(parser.text());
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, MINIMUM_SHOULD_MATCH_FIELD)) {
-                        minimumShouldMatch = parser.textOrNull();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, FUZZY_REWRITE_FIELD)) {
-                        fuzzyRewrite = parser.textOrNull();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, FUZZY_TRANSPOSITIONS_FIELD)) {
-                        fuzzyTranspositions = parser.booleanValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, LENIENT_FIELD)) {
-                        lenient = parser.booleanValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, CUTOFF_FREQUENCY_FIELD)) {
-                        cutOffFrequency = parser.floatValue();
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, ZERO_TERMS_QUERY_FIELD)) {
-                        String zeroTermsDocs = parser.text();
-                        if ("none".equalsIgnoreCase(zeroTermsDocs)) {
-                            zeroTermsQuery = MatchQuery.ZeroTermsQuery.NONE;
-                        } else if ("all".equalsIgnoreCase(zeroTermsDocs)) {
-                            zeroTermsQuery = MatchQuery.ZeroTermsQuery.ALL;
+        String currentFieldName = null;
+        XContentParser.Token token;
+        while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
+            if (token == XContentParser.Token.FIELD_NAME) {
+                currentFieldName = parser.currentName();
+            } else if (parseContext.isDeprecatedSetting(currentFieldName)) {
+                // skip
+            } else if (token == XContentParser.Token.START_OBJECT) {
+                throwParsingExceptionOnMultipleFields(NAME, parser.getTokenLocation(), fieldName, currentFieldName);
+                fieldName = currentFieldName;
+                while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
+                    if (token == XContentParser.Token.FIELD_NAME) {
+                        currentFieldName = parser.currentName();
+                    } else if (token.isValue()) {
+                        if (QUERY_FIELD.match(currentFieldName)) {
+                            value = parser.objectText();
+                        } else if (TYPE_FIELD.match(currentFieldName)) {
+                            String tStr = parser.text();
+                            if ("boolean".equals(tStr)) {
+                                type = MatchQuery.Type.BOOLEAN;
+                            } else if ("phrase".equals(tStr)) {
+                                type = MatchQuery.Type.PHRASE;
+                            } else if ("phrase_prefix".equals(tStr) || ("phrasePrefix".equals(tStr))) {
+                                type = MatchQuery.Type.PHRASE_PREFIX;
+                            } else {
+                                throw new ParsingException(parser.getTokenLocation(), "[" + NAME + "] query does not support type " + tStr);
+                            }
+                        } else if (ANALYZER_FIELD.match(currentFieldName)) {
+                            analyzer = parser.text();
+                        } else if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
+                            boost = parser.floatValue();
+                        } else if (SLOP_FIELD.match(currentFieldName)) {
+                            slop = parser.intValue();
+                        } else if (Fuzziness.FIELD.match(currentFieldName)) {
+                            fuzziness = Fuzziness.parse(parser);
+                        } else if (PREFIX_LENGTH_FIELD.match(currentFieldName)) {
+                            prefixLength = parser.intValue();
+                        } else if (MAX_EXPANSIONS_FIELD.match(currentFieldName)) {
+                            maxExpansion = parser.intValue();
+                        } else if (OPERATOR_FIELD.match(currentFieldName)) {
+                            operator = Operator.fromString(parser.text());
+                        } else if (MINIMUM_SHOULD_MATCH_FIELD.match(currentFieldName)) {
+                            minimumShouldMatch = parser.textOrNull();
+                        } else if (FUZZY_REWRITE_FIELD.match(currentFieldName)) {
+                            fuzzyRewrite = parser.textOrNull();
+                        } else if (FUZZY_TRANSPOSITIONS_FIELD.match(currentFieldName)) {
+                            fuzzyTranspositions = parser.booleanValue();
+                        } else if (LENIENT_FIELD.match(currentFieldName)) {
+                            lenient = parser.booleanValue();
+                        } else if (CUTOFF_FREQUENCY_FIELD.match(currentFieldName)) {
+                            cutOffFrequency = parser.floatValue();
+                        } else if (ZERO_TERMS_QUERY_FIELD.match(currentFieldName)) {
+                            String zeroTermsDocs = parser.text();
+                            if ("none".equalsIgnoreCase(zeroTermsDocs)) {
+                                zeroTermsQuery = MatchQuery.ZeroTermsQuery.NONE;
+                            } else if ("all".equalsIgnoreCase(zeroTermsDocs)) {
+                                zeroTermsQuery = MatchQuery.ZeroTermsQuery.ALL;
+                            } else {
+                                throw new ParsingException(parser.getTokenLocation(),
+                                        "Unsupported zero_terms_docs value [" + zeroTermsDocs + "]");
+                            }
+                        } else if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
+                            queryName = parser.text();
                         } else {
                             throw new ParsingException(parser.getTokenLocation(),
-                                    "Unsupported zero_terms_docs value [" + zeroTermsDocs + "]");
+                                    "[" + NAME + "] query does not support [" + currentFieldName + "]");
                         }
-                    } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
-                        queryName = parser.text();
                     } else {
                         throw new ParsingException(parser.getTokenLocation(),
-                                "[" + NAME + "] query does not support [" + currentFieldName + "]");
+                                "[" + NAME + "] unknown token [" + token + "] after [" + currentFieldName + "]");
                     }
-                } else {
-                    throw new ParsingException(parser.getTokenLocation(),
-                            "[" + NAME + "] unknown token [" + token + "] after [" + currentFieldName + "]");
                 }
-            }
-            parser.nextToken();
-        } else {
-            value = parser.objectText();
-            // move to the next token
-            token = parser.nextToken();
-            if (token != XContentParser.Token.END_OBJECT) {
-                throw new ParsingException(parser.getTokenLocation(), "[match] query parsed in simplified form, with direct field name, "
-                        + "but included more options than just the field name, possibly use its 'options' form, with 'query' element?");
+            } else {
+                throwParsingExceptionOnMultipleFields(NAME, parser.getTokenLocation(), fieldName, parser.currentName());
+                fieldName = parser.currentName();
+                value = parser.objectText();
             }
         }
 

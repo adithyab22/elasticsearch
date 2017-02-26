@@ -31,7 +31,7 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.lucene.search.Queries;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.index.mapper.internal.FieldNamesFieldMapper;
+import org.elasticsearch.index.mapper.FieldNamesFieldMapper;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -42,9 +42,7 @@ import java.util.Objects;
  * Constructs a query that only match on documents that the field has a value in them.
  */
 public class ExistsQueryBuilder extends AbstractQueryBuilder<ExistsQueryBuilder> {
-
     public static final String NAME = "exists";
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME);
 
     public static final ParseField FIELD_FIELD = new ParseField("field");
 
@@ -98,11 +96,11 @@ public class ExistsQueryBuilder extends AbstractQueryBuilder<ExistsQueryBuilder>
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token.isValue()) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, FIELD_FIELD)) {
+                if (FIELD_FIELD.match(currentFieldName)) {
                     fieldPattern = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
+                } else if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
                     queryName = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
+                } else if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
                     boost = parser.floatValue();
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "[" + ExistsQueryBuilder.NAME +
@@ -134,7 +132,7 @@ public class ExistsQueryBuilder extends AbstractQueryBuilder<ExistsQueryBuilder>
                 (FieldNamesFieldMapper.FieldNamesFieldType)context.getMapperService().fullName(FieldNamesFieldMapper.NAME);
         if (fieldNamesFieldType == null) {
             // can only happen when no types exist, so no docs exist either
-            return Queries.newMatchNoDocsQuery();
+            return Queries.newMatchNoDocsQuery("Missing types in \"" + NAME + "\" query.");
         }
 
         final Collection<String> fields;

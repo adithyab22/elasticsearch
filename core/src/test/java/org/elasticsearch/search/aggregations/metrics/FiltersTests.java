@@ -19,20 +19,27 @@
 
 package org.elasticsearch.search.aggregations.metrics;
 
+import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.MatchNoneQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.QueryParseContext;
 import org.elasticsearch.search.aggregations.BaseAggregationTestCase;
+import org.elasticsearch.search.aggregations.bucket.filters.FiltersAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.filters.FiltersAggregator.KeyedFilter;
-import org.elasticsearch.search.aggregations.bucket.filters.FiltersAggregatorBuilder;
 
-public class FiltersTests extends BaseAggregationTestCase<FiltersAggregatorBuilder> {
+import java.io.IOException;
+
+public class FiltersTests extends BaseAggregationTestCase<FiltersAggregationBuilder> {
 
     @Override
-    protected FiltersAggregatorBuilder createTestAggregatorBuilder() {
+    protected FiltersAggregationBuilder createTestAggregatorBuilder() {
 
         int size = randomIntBetween(1, 20);
-        FiltersAggregatorBuilder factory;
+        FiltersAggregationBuilder factory;
         if (randomBoolean()) {
             KeyedFilter[] filters = new KeyedFilter[size];
             int i = 0;
@@ -40,13 +47,13 @@ public class FiltersTests extends BaseAggregationTestCase<FiltersAggregatorBuild
                 filters[i++] = new KeyedFilter(key,
                         QueryBuilders.termQuery(randomAsciiOfLengthBetween(5, 20), randomAsciiOfLengthBetween(5, 20)));
             }
-            factory = new FiltersAggregatorBuilder(randomAsciiOfLengthBetween(1, 20), filters);
+            factory = new FiltersAggregationBuilder(randomAsciiOfLengthBetween(1, 20), filters);
         } else {
-            QueryBuilder<?>[] filters = new QueryBuilder<?>[size];
+            QueryBuilder[] filters = new QueryBuilder[size];
             for (int i = 0; i < size; i++) {
                 filters[i] = QueryBuilders.termQuery(randomAsciiOfLengthBetween(5, 20), randomAsciiOfLengthBetween(5, 20));
             }
-            factory = new FiltersAggregatorBuilder(randomAsciiOfLengthBetween(1, 20), filters);
+            factory = new FiltersAggregationBuilder(randomAsciiOfLengthBetween(1, 20), filters);
         }
         if (randomBoolean()) {
             factory.otherBucket(randomBoolean());
@@ -64,8 +71,8 @@ public class FiltersTests extends BaseAggregationTestCase<FiltersAggregatorBuild
     public void testFiltersSortedByKey() {
         KeyedFilter[] original = new KeyedFilter[]{new KeyedFilter("bbb", new MatchNoneQueryBuilder()),
                 new KeyedFilter("aaa", new MatchNoneQueryBuilder())};
-        FiltersAggregatorBuilder builder;
-        builder = new FiltersAggregatorBuilder("my-agg", original);
+        FiltersAggregationBuilder builder;
+        builder = new FiltersAggregationBuilder("my-agg", original);
         assertEquals("aaa", builder.filters().get(0).key());
         assertEquals("bbb", builder.filters().get(1).key());
         // original should be unchanged
@@ -73,4 +80,41 @@ public class FiltersTests extends BaseAggregationTestCase<FiltersAggregatorBuild
         assertEquals("aaa", original[1].key());
     }
 
+    public void testOtherBucket() throws IOException {
+        XContentBuilder builder = XContentFactory.contentBuilder(randomFrom(XContentType.values()));
+        builder.startObject();
+        builder.startArray("filters").endArray();
+        builder.endObject();
+        XContentParser parser = createParser(shuffleXContent(builder));
+        parser.nextToken();
+        QueryParseContext context = new QueryParseContext(parser);
+        FiltersAggregationBuilder filters = FiltersAggregationBuilder.parse("agg_name", context);
+        // The other bucket is disabled by default
+        assertFalse(filters.otherBucket());
+
+        builder = XContentFactory.contentBuilder(randomFrom(XContentType.values()));
+        builder.startObject();
+        builder.startArray("filters").endArray();
+        builder.field("other_bucket_key", "some_key");
+        builder.endObject();
+        parser = createParser(shuffleXContent(builder));
+        parser.nextToken();
+        context = new QueryParseContext(parser);
+        filters = FiltersAggregationBuilder.parse("agg_name", context);
+        // but setting a key enables it automatically
+        assertTrue(filters.otherBucket());
+
+        builder = XContentFactory.contentBuilder(randomFrom(XContentType.values()));
+        builder.startObject();
+        builder.startArray("filters").endArray();
+        builder.field("other_bucket", false);
+        builder.field("other_bucket_key", "some_key");
+        builder.endObject();
+        parser = createParser(shuffleXContent(builder));
+        parser.nextToken();
+        context = new QueryParseContext(parser);
+        filters = FiltersAggregationBuilder.parse("agg_name", context);
+        // unless the other bucket is explicitly disabled
+        assertFalse(filters.otherBucket());
+    }
 }

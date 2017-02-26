@@ -31,12 +31,12 @@ import org.elasticsearch.common.lucene.search.function.FiltersFunctionScoreQuery
 import org.elasticsearch.common.lucene.search.function.FiltersFunctionScoreQuery.FilterFunction;
 import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
 import org.elasticsearch.common.lucene.search.function.ScoreFunction;
-import org.elasticsearch.common.xcontent.ParseFieldRegistry;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentLocation;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.index.query.AbstractQueryBuilder;
+import org.elasticsearch.index.query.InnerHitBuilder;
 import org.elasticsearch.index.query.MatchAllQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryParseContext;
@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -56,7 +57,6 @@ import java.util.Objects;
  */
 public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScoreQueryBuilder> {
     public static final String NAME = "function_score";
-    public static final ParseField QUERY_NAME_FIELD = new ParseField(NAME);
 
     // For better readability of error message
     static final String MISPLACED_FUNCTION_MESSAGE_PREFIX = "you can either define [functions] array or a single function, not both. ";
@@ -73,7 +73,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
     public static final CombineFunction DEFAULT_BOOST_MODE = CombineFunction.MULTIPLY;
     public static final FiltersFunctionScoreQuery.ScoreMode DEFAULT_SCORE_MODE = FiltersFunctionScoreQuery.ScoreMode.MULTIPLY;
 
-    private final QueryBuilder<?> query;
+    private final QueryBuilder query;
 
     private float maxBoost = FunctionScoreQuery.DEFAULT_MAX_BOOST;
 
@@ -90,7 +90,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
      *
      * @param query the query that needs to be custom scored
      */
-    public FunctionScoreQueryBuilder(QueryBuilder<?> query) {
+    public FunctionScoreQueryBuilder(QueryBuilder query) {
         this(query, new FilterFunctionBuilder[0]);
     }
 
@@ -118,7 +118,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
      * @param query the query to custom score
      * @param scoreFunctionBuilder score function that is executed
      */
-    public FunctionScoreQueryBuilder(QueryBuilder<?> query, ScoreFunctionBuilder<?> scoreFunctionBuilder) {
+    public FunctionScoreQueryBuilder(QueryBuilder query, ScoreFunctionBuilder<?> scoreFunctionBuilder) {
         this(query, new FilterFunctionBuilder[]{new FilterFunctionBuilder(scoreFunctionBuilder)});
     }
 
@@ -128,7 +128,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
      * @param query the query that defines which documents the function_score query will be executed on.
      * @param filterFunctionBuilders the filters and functions
      */
-    public FunctionScoreQueryBuilder(QueryBuilder<?> query, FilterFunctionBuilder[] filterFunctionBuilders) {
+    public FunctionScoreQueryBuilder(QueryBuilder query, FilterFunctionBuilder[] filterFunctionBuilders) {
         if (query == null) {
             throw new IllegalArgumentException("function_score: query must not be null");
         }
@@ -149,7 +149,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
      */
     public FunctionScoreQueryBuilder(StreamInput in) throws IOException {
         super(in);
-        query = in.readQuery();
+        query = in.readNamedWriteable(QueryBuilder.class);
         filterFunctionBuilders = in.readList(FilterFunctionBuilder::new).toArray(new FilterFunctionBuilder[0]);
         maxBoost = in.readFloat();
         minScore = in.readOptionalFloat();
@@ -159,7 +159,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
 
     @Override
     protected void doWriteTo(StreamOutput out) throws IOException {
-        out.writeQuery(query);
+        out.writeNamedWriteable(query);
         out.writeList(Arrays.asList(filterFunctionBuilders));
         out.writeFloat(maxBoost);
         out.writeOptionalFloat(minScore);
@@ -170,7 +170,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
     /**
      * Returns the query that defines which documents the function_score query will be executed on.
      */
-    public QueryBuilder<?> query() {
+    public QueryBuilder query() {
         return this.query;
     }
 
@@ -331,15 +331,15 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
      * Function to be associated with an optional filter, meaning it will be executed only for the documents
      * that match the given filter.
      */
-    public static class FilterFunctionBuilder implements ToXContent, Writeable<FilterFunctionBuilder> {
-        private final QueryBuilder<?> filter;
+    public static class FilterFunctionBuilder implements ToXContent, Writeable {
+        private final QueryBuilder filter;
         private final ScoreFunctionBuilder<?> scoreFunction;
 
         public FilterFunctionBuilder(ScoreFunctionBuilder<?> scoreFunctionBuilder) {
             this(new MatchAllQueryBuilder(), scoreFunctionBuilder);
         }
 
-        public FilterFunctionBuilder(QueryBuilder<?> filter, ScoreFunctionBuilder<?> scoreFunction) {
+        public FilterFunctionBuilder(QueryBuilder filter, ScoreFunctionBuilder<?> scoreFunction) {
             if (filter == null) {
                 throw new IllegalArgumentException("function_score: filter must not be null");
             }
@@ -354,17 +354,17 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
          * Read from a stream.
          */
         public FilterFunctionBuilder(StreamInput in) throws IOException {
-            filter = in.readQuery();
-            scoreFunction = in.readScoreFunction();
+            filter = in.readNamedWriteable(QueryBuilder.class);
+            scoreFunction = in.readNamedWriteable(ScoreFunctionBuilder.class);
         }
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
-            out.writeQuery(filter);
-            out.writeScoreFunction(scoreFunction);
+            out.writeNamedWriteable(filter);
+            out.writeNamedWriteable(scoreFunction);
         }
 
-        public QueryBuilder<?> getFilter() {
+        public QueryBuilder getFilter() {
             return filter;
         }
 
@@ -401,7 +401,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
         }
 
         public FilterFunctionBuilder rewrite(QueryRewriteContext context) throws IOException {
-            QueryBuilder<?> rewrite = filter.rewrite(context);
+            QueryBuilder rewrite = filter.rewrite(context);
             if (rewrite != filter) {
                 return new FilterFunctionBuilder(rewrite, scoreFunction);
             }
@@ -410,8 +410,8 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
     }
 
     @Override
-    protected QueryBuilder<?> doRewrite(QueryRewriteContext queryRewriteContext) throws IOException {
-        QueryBuilder<?> queryBuilder = this.query.rewrite(queryRewriteContext);
+    protected QueryBuilder doRewrite(QueryRewriteContext queryRewriteContext) throws IOException {
+        QueryBuilder queryBuilder = this.query.rewrite(queryRewriteContext);
         FilterFunctionBuilder[] rewrittenBuilders = new FilterFunctionBuilder[this.filterFunctionBuilders.length];
         boolean rewritten = false;
         for (int i = 0; i < rewrittenBuilders.length; i++) {
@@ -424,16 +424,21 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
             newQueryBuilder.scoreMode = scoreMode;
             newQueryBuilder.minScore = minScore;
             newQueryBuilder.maxBoost = maxBoost;
+            newQueryBuilder.boostMode = boostMode;
             return newQueryBuilder;
         }
         return this;
     }
 
-    public static FunctionScoreQueryBuilder fromXContent(ParseFieldRegistry<ScoreFunctionParser<?>> scoreFunctionsRegistry,
-            QueryParseContext parseContext) throws IOException {
+    @Override
+    protected void extractInnerHitBuilders(Map<String, InnerHitBuilder> innerHits) {
+        InnerHitBuilder.extractInnerHits(query(), innerHits);
+    }
+
+    public static FunctionScoreQueryBuilder fromXContent(QueryParseContext parseContext) throws IOException {
         XContentParser parser = parseContext.parser();
 
-        QueryBuilder<?> query = null;
+        QueryBuilder query = null;
         float boost = AbstractQueryBuilder.DEFAULT_BOOST;
         String queryName = null;
 
@@ -454,7 +459,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token == XContentParser.Token.START_OBJECT) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, QUERY_FIELD)) {
+                if (QUERY_FIELD.match(currentFieldName)) {
                     if (query != null) {
                         throw new ParsingException(parser.getTokenLocation(), "failed to parse [{}] query. [query] is already defined.",
                                 NAME);
@@ -474,37 +479,35 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
                     singleFunctionFound = true;
                     singleFunctionName = currentFieldName;
 
-                    // we try to parse a score function. If there is no score function for the current field name,
-                    // getScoreFunction will throw.
-                    ScoreFunctionBuilder<?> scoreFunction = scoreFunctionsRegistry.lookup(currentFieldName, parseContext.parser())
-                            .fromXContent(parseContext);
+                        ScoreFunctionBuilder<?> scoreFunction = parser.namedObject(ScoreFunctionBuilder.class, currentFieldName,
+                                parseContext);
                     filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(scoreFunction));
                 }
             } else if (token == XContentParser.Token.START_ARRAY) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, FUNCTIONS_FIELD)) {
+                if (FUNCTIONS_FIELD.match(currentFieldName)) {
                     if (singleFunctionFound) {
                         String errorString = "already found [" + singleFunctionName + "], now encountering [functions].";
                         handleMisplacedFunctionsDeclaration(parser.getTokenLocation(), errorString);
                     }
                     functionArrayFound = true;
-                    currentFieldName = parseFiltersAndFunctions(scoreFunctionsRegistry, parseContext, filterFunctionBuilders);
+                    currentFieldName = parseFiltersAndFunctions(parseContext, filterFunctionBuilders);
                 } else {
                     throw new ParsingException(parser.getTokenLocation(), "failed to parse [{}] query. array [{}] is not supported",
                             NAME, currentFieldName);
                 }
 
             } else if (token.isValue()) {
-                if (parseContext.parseFieldMatcher().match(currentFieldName, SCORE_MODE_FIELD)) {
+                if (SCORE_MODE_FIELD.match(currentFieldName)) {
                     scoreMode = FiltersFunctionScoreQuery.ScoreMode.fromString(parser.text());
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, BOOST_MODE_FIELD)) {
+                } else if (BOOST_MODE_FIELD.match(currentFieldName)) {
                     combineFunction = CombineFunction.fromString(parser.text());
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, MAX_BOOST_FIELD)) {
+                } else if (MAX_BOOST_FIELD.match(currentFieldName)) {
                     maxBoost = parser.floatValue();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.BOOST_FIELD)) {
+                } else if (AbstractQueryBuilder.BOOST_FIELD.match(currentFieldName)) {
                     boost = parser.floatValue();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, AbstractQueryBuilder.NAME_FIELD)) {
+                } else if (AbstractQueryBuilder.NAME_FIELD.match(currentFieldName)) {
                     queryName = parser.text();
-                } else if (parseContext.parseFieldMatcher().match(currentFieldName, MIN_SCORE_FIELD)) {
+                } else if (MIN_SCORE_FIELD.match(currentFieldName)) {
                     minScore = parser.floatValue();
                 } else {
                     if (singleFunctionFound) {
@@ -517,7 +520,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
                         String errorString = "already found [functions] array, now encountering [" + currentFieldName + "].";
                         handleMisplacedFunctionsDeclaration(parser.getTokenLocation(), errorString);
                     }
-                    if (parseContext.parseFieldMatcher().match(currentFieldName, WEIGHT_FIELD)) {
+                    if (WEIGHT_FIELD.match(currentFieldName)) {
                         filterFunctionBuilders.add(
                                 new FunctionScoreQueryBuilder.FilterFunctionBuilder(new WeightBuilder().setWeight(parser.floatValue())));
                         singleFunctionFound = true;
@@ -554,14 +557,13 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
                 MISPLACED_FUNCTION_MESSAGE_PREFIX + errorString);
     }
 
-    private static String parseFiltersAndFunctions(ParseFieldRegistry<ScoreFunctionParser<?>> scoreFunctionsRegistry,
-            QueryParseContext parseContext, List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilders)
-                    throws IOException {
+    private static String parseFiltersAndFunctions(QueryParseContext parseContext,
+            List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilders) throws IOException {
         String currentFieldName = null;
         XContentParser.Token token;
         XContentParser parser = parseContext.parser();
         while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
-            QueryBuilder<?> filter = null;
+            QueryBuilder filter = null;
             ScoreFunctionBuilder<?> scoreFunction = null;
             Float functionWeight = null;
             if (token != XContentParser.Token.START_OBJECT) {
@@ -573,7 +575,7 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
                     if (token == XContentParser.Token.FIELD_NAME) {
                         currentFieldName = parser.currentName();
                     } else if (token == XContentParser.Token.START_OBJECT) {
-                        if (parseContext.parseFieldMatcher().match(currentFieldName, FILTER_FIELD)) {
+                        if (FILTER_FIELD.match(currentFieldName)) {
                             filter = parseContext.parseInnerQueryBuilder();
                         } else {
                             if (scoreFunction != null) {
@@ -581,10 +583,10 @@ public class FunctionScoreQueryBuilder extends AbstractQueryBuilder<FunctionScor
                                         "failed to parse function_score functions. already found [{}], now encountering [{}].",
                                         scoreFunction.getName(), currentFieldName);
                             }
-                            scoreFunction = scoreFunctionsRegistry.lookup(currentFieldName, parser).fromXContent(parseContext);
+                            scoreFunction = parser.namedObject(ScoreFunctionBuilder.class, currentFieldName, parseContext);
                         }
                     } else if (token.isValue()) {
-                        if (parseContext.parseFieldMatcher().match(currentFieldName, WEIGHT_FIELD)) {
+                        if (WEIGHT_FIELD.match(currentFieldName)) {
                             functionWeight = parser.floatValue();
                         } else {
                             throw new ParsingException(parser.getTokenLocation(), "failed to parse [{}] query. field [{}] is not supported",

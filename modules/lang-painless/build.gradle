@@ -26,9 +26,7 @@ esplugin {
 
 dependencies {
   compile 'org.antlr:antlr4-runtime:4.5.1-1'
-  compile 'org.ow2.asm:asm:5.0.4'
-  compile 'org.ow2.asm:asm-commons:5.0.4'
-  compile 'org.ow2.asm:asm-tree:5.0.4'
+  compile 'org.ow2.asm:asm-debug-all:5.1'
 }
 
 dependencyLicenses {
@@ -48,3 +46,27 @@ dependencies {
 
 ant.references['regenerate.classpath'] = new Path(ant.project, configurations.regenerate.asPath)
 ant.importBuild 'ant.xml'
+
+integTestCluster {
+  setting 'script.max_compilations_per_minute', '1000'
+}
+
+/* Build Javadoc for the Java classes in Painless's public API that are in the
+ * Painless plugin */
+task apiJavadoc(type: Javadoc) {
+  source = sourceSets.main.allJava
+  include '**/org/elasticsearch/painless/api/'
+  destinationDir = new File(docsDir, 'apiJavadoc')
+}
+task apiJavadocJar(type: Jar) {
+  classifier = 'apiJavadoc'
+  from apiJavadoc
+}
+assemble.dependsOn apiJavadocJar
+
+// Reference documentation for Painless's public API.
+task generatePainlessApi(type: JavaExec) {
+  main = 'org.elasticsearch.painless.PainlessDocGenerator'
+  classpath = sourceSets.test.runtimeClasspath
+  args file('../../docs/reference/painless-api-reference')
+}

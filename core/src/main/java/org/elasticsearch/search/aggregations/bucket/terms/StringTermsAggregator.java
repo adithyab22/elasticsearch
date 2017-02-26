@@ -33,8 +33,8 @@ import org.elasticsearch.search.aggregations.LeafBucketCollectorBase;
 import org.elasticsearch.search.aggregations.bucket.terms.support.BucketPriorityQueue;
 import org.elasticsearch.search.aggregations.bucket.terms.support.IncludeExclude;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
-import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.search.aggregations.support.ValuesSource;
+import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -52,15 +52,15 @@ public class StringTermsAggregator extends AbstractStringTermsAggregator {
 
     public StringTermsAggregator(String name, AggregatorFactories factories, ValuesSource valuesSource,
             Terms.Order order, DocValueFormat format, BucketCountThresholds bucketCountThresholds,
-            IncludeExclude.StringFilter includeExclude, AggregationContext aggregationContext,
+            IncludeExclude.StringFilter includeExclude, SearchContext context,
             Aggregator parent, SubAggCollectionMode collectionMode, boolean showTermDocCountError,
             List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
 
-        super(name, factories, aggregationContext, parent, order, format, bucketCountThresholds, collectionMode, showTermDocCountError,
+        super(name, factories, context, parent, order, format, bucketCountThresholds, collectionMode, showTermDocCountError,
                 pipelineAggregators, metaData);
         this.valuesSource = valuesSource;
         this.includeExclude = includeExclude;
-        bucketOrds = new BytesRefHash(1, aggregationContext.bigArrays());
+        bucketOrds = new BytesRefHash(1, context.bigArrays());
     }
 
     @Override
@@ -110,7 +110,7 @@ public class StringTermsAggregator extends AbstractStringTermsAggregator {
 
         if (bucketCountThresholds.getMinDocCount() == 0 && (order != InternalOrder.COUNT_DESC || bucketOrds.size() < bucketCountThresholds.getRequiredSize())) {
             // we need to fill-in the blanks
-            for (LeafReaderContext ctx : context.searchContext().searcher().getTopReaderContext().leaves()) {
+            for (LeafReaderContext ctx : context.searcher().getTopReaderContext().leaves()) {
                 final SortedBinaryDocValues values = valuesSource.bytesValues(ctx);
                 // brute force
                 for (int docId = 0; docId < ctx.reader().maxDoc(); ++docId) {
@@ -129,7 +129,7 @@ public class StringTermsAggregator extends AbstractStringTermsAggregator {
         final int size = (int) Math.min(bucketOrds.size(), bucketCountThresholds.getShardSize());
 
         long otherDocCount = 0;
-        BucketPriorityQueue ordered = new BucketPriorityQueue(size, order.comparator(this));
+        BucketPriorityQueue<StringTerms.Bucket> ordered = new BucketPriorityQueue<>(size, order.comparator(this));
         StringTerms.Bucket spare = null;
         for (int i = 0; i < bucketOrds.size(); i++) {
             if (spare == null) {
@@ -140,12 +140,12 @@ public class StringTermsAggregator extends AbstractStringTermsAggregator {
             otherDocCount += spare.docCount;
             spare.bucketOrd = i;
             if (bucketCountThresholds.getShardMinDocCount() <= spare.docCount) {
-                spare = (StringTerms.Bucket) ordered.insertWithOverflow(spare);
+                spare = ordered.insertWithOverflow(spare);
             }
         }
 
         // Get the top buckets
-        final InternalTerms.Bucket[] list = new InternalTerms.Bucket[ordered.size()];
+        final StringTerms.Bucket[] list = new StringTerms.Bucket[ordered.size()];
         long survivingBucketOrds[] = new long[ordered.size()];
         for (int i = ordered.size() - 1; i >= 0; --i) {
             final StringTerms.Bucket bucket = (StringTerms.Bucket) ordered.pop();
@@ -164,9 +164,9 @@ public class StringTermsAggregator extends AbstractStringTermsAggregator {
           bucket.docCountError = 0;
         }
 
-        return new StringTerms(name, order, format, bucketCountThresholds.getRequiredSize(), bucketCountThresholds.getShardSize(),
-                bucketCountThresholds.getMinDocCount(), Arrays.asList(list), showTermDocCountError, 0, otherDocCount, pipelineAggregators(),
-                metaData());
+        return new StringTerms(name, order, bucketCountThresholds.getRequiredSize(), bucketCountThresholds.getMinDocCount(),
+                pipelineAggregators(), metaData(), format, bucketCountThresholds.getShardSize(), showTermDocCountError, otherDocCount,
+                Arrays.asList(list), 0);
     }
 
     @Override

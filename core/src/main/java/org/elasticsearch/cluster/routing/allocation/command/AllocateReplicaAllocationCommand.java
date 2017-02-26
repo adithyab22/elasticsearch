@@ -77,7 +77,7 @@ public class AllocateReplicaAllocationCommand extends AbstractAllocateAllocation
 
         @Override
         public Builder parse(XContentParser parser) throws IOException {
-            return REPLICA_PARSER.parse(parser, this);
+            return REPLICA_PARSER.parse(parser, this, null);
         }
 
         @Override
@@ -133,6 +133,4 @@ public class AllocateReplicaAllocationCommand extends AbstractAllocateAllocation
         initializeUnassignedShard(allocation, routingNodes, routingNode, shardRouting);
         return new RerouteExplanation(this, decision);
     }
-
-
 }
